@@ -1,0 +1,37 @@
+
+import com.amazon.deequ.{VerificationSuite, VerificationResult}
+import com.amazon.deequ.VerificationResult.checkResultsAsDataFrame
+import com.amazon.deequ.checks.{Check, CheckLevel}
+
+val dataset = spark.read.option("header","true").csv("s3://cdh-banktransactions-337430/atm/atmraw/20200110_094521_input.csv")
+
+dataset.show()
+
+val verificationResult: VerificationResult = { VerificationSuite().onData(dataset).addCheck(Check(CheckLevel.Error, "Review Check").isUnique("trans_id").isUnique("account_id").isComplete("amount")).run() }
+
+val resultDataFrame = checkResultsAsDataFrame(spark, verificationResult)
+
+resultDataFrame.show(truncate=false)
+
+// resultDataFrame..coalesce(1).write.format("com.databricks.spark.csv").option("header", "true").save("/home/hadoop/res/mydata.csv")
+
+
+// dataset.repartition(1).write.mode ("overwrite").format("com.databricks.spark.csv").option("header", "true").save("/home/hadoop/filename.csv")
+
+// sc.setLogLevel("INFO")
+
+// dataset.repartition(1).write.mode ("overwrite").format("com.databricks.spark.csv").option("header", "true").save("/home/hadoop/filename.csv")
+
+sc.hadoopConfiguration.set("mapreduce.fileoutputcommitter.marksuccessfuljobs", "false")
+sc.hadoopConfiguration.set("parquet.enable.summary-metadata", "false")
+resultDataFrame.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").save("s3://cdh-banktransactions-337430/results.csv")
+
+sys.exit
+// FileSystem hadoopFileSystem = FileSystem.get(sparkContext.hadoopConfiguration());
+
+//     hadoopFileSystem.copyToLocalFile(true,
+//         new org.apache.hadoop.fs.Path("/home/hadoop/filename.csv"),
+//         new org.apache.hadoop.fs.Path("/home/hadoop/filename.csv"));
+
+
+//  dataset.map(x => x.mkString("|")).saveAsTextFile("/home/hadoop/file.csv"); 
