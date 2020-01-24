@@ -49,7 +49,7 @@ val verificationResult: VerificationResult = { VerificationSuite().onData(datase
 
 val resultDataFrame = checkResultsAsDataFrame(spark, verificationResult)
 
-resultDataFrame.show(truncate=false)
+resultDataFrame.show(truncate=true)
 
 
 
