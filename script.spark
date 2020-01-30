@@ -3,61 +3,114 @@ import com.amazon.deequ.{VerificationSuite, VerificationResult}
 import com.amazon.deequ.VerificationResult.checkResultsAsDataFrame
 import com.amazon.deequ.checks.{Check, CheckLevel}
 import com.amazon.deequ.suggestions.{ConstraintSuggestionRunner, Rules}
+import com.amazon.deequ.profiles.{ColumnProfilerRunner, NumericColumnProfile}
 
-val dataset = spark.read.option("header","true").csv("s3://visbucket-42325/geoloans/loan_data_updates.csv")
+var demo = "\nvar suggestions = SuggestConstraints()\n"+"BasicEvaluation\n"+"StatisticalEvaluation\n"+"\nEvaluateDataQuality"
+val args = sc.getConf.get("spark.driver.args").split("\\s+")
+val source_bucket=args(0)
+val output_bucket=args(1)
 
-dataset.show()
+println("Source Bucket : " + source_bucket)
+println("Output Bucket : " + output_bucket)
+
+
+val dataset = spark.read.option("header","true").csv(source_bucket)
+
+// dataset.show(truncate=true)
+dataset.printSchema
 
 
 
+
+
+
+
+def BasicEvaluation(): Unit = {
+	val result = ColumnProfilerRunner().onData(dataset).run()
+
+	result.profiles.foreach { case (productName, profile) =>
+	  println(s"Column '$productName':\n " +
+	    s"\tcompleteness: ${profile.completeness}\n" +
+	    // s"\tapproximate number of distinct values: ${profile.approximateNumDistinctValues}\n" +
+	    s"\tdatatype: ${profile.dataType}\n")
+	}
+
+}
+
+
+def StatisticalEvaluation(): Unit = {
+
+	val result = ColumnProfilerRunner().onData(dataset).run()
+
+	val countProfile = result.profiles("loan_amount").asInstanceOf[NumericColumnProfile]
+
+	println(s"Statistics of 'loan_amount':\n" +
+	  s"\tminimum: ${countProfile.minimum.get}\n" +
+	  s"\tmaximum: ${countProfile.maximum.get}\n" +
+	  s"\tmean: ${countProfile.mean.get}\n" +
+	  s"\tstandard deviation: ${countProfile.stdDev.get}\n")
+
+	val recProfile = result.profiles("interest_rate").asInstanceOf[NumericColumnProfile]
+
+	println(s"Statistics of 'interest_rate':\n" +
+	  s"\tminimum: ${recProfile.minimum.get}\n" +
+	  s"\tmaximum: ${recProfile.maximum.get}\n" +
+	  s"\tmean: ${recProfile.mean.get}\n" +
+	  s"\tstandard deviation: ${recProfile.stdDev.get}\n")
+
+}
+
+def SuggestConstraints(): org.apache.spark.sql.Dataset[(String, String, String)] = {
+	val suggestionResult = { ConstraintSuggestionRunner().onData(dataset).addConstraintRules(Rules.DEFAULT).run()}
+	suggestionResult.constraintSuggestions.flatMap { 
+	  case (column, suggestions) => 
+	    suggestions.map { constraint =>
+	      (column, constraint.description, constraint.codeForConstraint)
+	    } 
+	}.toSeq.toDS()
+		
+}
+var suggestions = SuggestConstraints()
+// suggestions.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").save(output_bucket)
 /////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////
-// // Identify Suggestions
-// val suggestionResult = { ConstraintSuggestionRunner().onData(dataset).addConstraintRules(Rules.DEFAULT).run()}
-// val suggestionDataFrame = suggestionResult.constraintSuggestions.flatMap { 
-//   case (column, suggestions) => 
-//     suggestions.map { constraint =>
-//       (column, constraint.description, constraint.codeForConstraint)
-//     } 
-// }.toSeq.toDS()
-// suggestionDataFrame.show()
-/////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////
 
-
-
-
-val verificationResult: VerificationResult = { VerificationSuite().onData(dataset).addCheck(Check(CheckLevel.Error, "Review Check")
-	.isComplete("purpose_cat")
-	.isNonNegative("purpose_cat")  
-	.isComplete("home_ownership")
-	.isComplete("total_pymnt")
-	.isComplete("interest_rate") 
-	.isNonNegative("interest_rate")
-	.isNonNegative("year")
-	.isComplete("grade_cat") 
-	.isNonNegative("grade_cat")
-	.isComplete("income_cat")
-	.isContainedIn("term", Array(" 36 months", " 12 months"))
-	.isContainedIn("grade", Array("B", "C", "A", "D", "E", "F", "G"))
-	.isContainedIn("income_category", Array("Low", "Medium", "High"))
-	.isContainedIn("loan_condition", Array("Good Loan", "Bad Loan"))
+def EvaluateDataQuality(): Unit = {
+	val verificationResult: VerificationResult = { VerificationSuite().onData(dataset).addCheck(Check(CheckLevel.Error, "Review Check")
+		.isComplete("purpose_cat")
+		.isNonNegative("purpose_cat")  
+		.isComplete("home_ownership")
+		.isComplete("total_pymnt")
+		.isComplete("interest_rate") 
+		.isNonNegative("interest_rate")
+		.isNonNegative("year")
+		.isComplete("grade_cat") 
+		.isNonNegative("grade_cat")
+		.isComplete("income_cat")
+		.isContainedIn("term", Array(" 36 months", " 12 months"))
+		.isContainedIn("grade", Array("B", "C", "A", "D", "E", "F", "G"))
+		.isContainedIn("income_category", Array("Low", "Medium", "High"))
+		.isContainedIn("loan_condition", Array("Good Loan", "Bad Loan"))
 	.isContainedIn("loan_condition", Array("Good Loan"), _ >= 0.92, Some("It should be above 0.92!"))                                 
-).run() }
+	).run() }
 
-val resultDataFrame = checkResultsAsDataFrame(spark, verificationResult)
+	val resultDataFrame = checkResultsAsDataFrame(spark, verificationResult)
 
-resultDataFrame.show(truncate=true)
+	resultDataFrame.show(truncate=true)
+
+
+	sc.hadoopConfiguration.set("mapreduce.fileoutputcommitter.marksuccessfuljobs", "false")
+	sc.hadoopConfiguration.set("parquet.enable.summary-metadata", "false")
+	resultDataFrame.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").save(output_bucket)
+
+
+}
+
+
+RunEvaluation()
 
 
 
-sc.hadoopConfiguration.set("mapreduce.fileoutputcommitter.marksuccessfuljobs", "false")
-sc.hadoopConfiguration.set("parquet.enable.summary-metadata", "false")
-resultDataFrame.coalesce(1).write.mode("overwrite").format("com.databricks.spark.csv").option("header", "true").save("s3://visbucket-42325/results/")
-
-sys.exit
+// sys.exit
 // FileSystem hadoopFileSystem = FileSystem.get(sparkContext.hadoopConfiguration());
 
 //     hadoopFileSystem.copyToLocalFile(true,
