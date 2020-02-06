@@ -1,0 +1,51 @@
+import com.amazon.deequ.{VerificationSuite, VerificationResult}
+import com.amazon.deequ.VerificationResult.checkResultsAsDataFrame
+import com.amazon.deequ.checks.{Check, CheckLevel}
+import com.amazon.deequ.suggestions.{ConstraintSuggestionRunner, Rules}
+import com.amazon.deequ.profiles.{ColumnProfilerRunner, NumericColumnProfile}
+import com.amazon.deequ.repository.ResultKey
+import com.amazon.deequ.repository.memory.InMemoryMetricsRepository
+import com.amazon.deequ.anomalydetection.RelativeRateOfChangeStrategy
+import com.amazon.deequ.analyzers.Size
+import com.amazon.deequ.checks.CheckStatus._
+import org.apache.spark.sql.SparkSession
+
+
+val dataset_old = spark.read.option("header","true").csv("s3://visbucket-42325/geoloans/loan_data_old.csv")
+val dataset_new = spark.read.option("header","true").csv("s3://visbucket-42325/geoloans/loan_data_new.csv")
+
+val metricsRepository = new InMemoryMetricsRepository()
+
+val yesterdaysKey = ResultKey(System.currentTimeMillis() - 24 * 60 * 1000)
+
+
+VerificationSuite().onData(dataset_old).useRepository(metricsRepository).saveOrAppendResult(yesterdaysKey).addAnomalyCheck(RelativeRateOfChangeStrategy(maxRateIncrease = Some(2.0)), Size()).run()
+
+
+val todaysKey = ResultKey(System.currentTimeMillis())
+
+
+val verificationResult = VerificationSuite().onData(dataset_new).useRepository(metricsRepository).saveOrAppendResult(yesterdaysKey).addAnomalyCheck(RelativeRateOfChangeStrategy(maxRateIncrease = Some(2.0)), Size()).run()
+
+println()
+println()
+println()
+println()
+
+if (verificationResult.status != Success) {
+  println("Anomaly detected in the Size() metric!")
+  println("New dataset is much larger than expected!")
+
+  metricsRepository
+    .load()
+    .forAnalyzers(Seq(Size()))
+    .getSuccessMetricsAsDataFrame(SparkSession.builder().getOrCreate())
+    .show()
+} else {
+	println("No anomalies detected in the Size() metric!")	
+}
+
+println()
+println()
+println()
+println()
