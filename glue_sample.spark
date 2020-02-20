@@ -1,0 +1,109 @@
+import com.amazonaws.services.glue.GlueContext
+import com.amazonaws.services.glue.MappingSpec
+import com.amazonaws.services.glue.errors.CallSite
+import com.amazonaws.services.glue.util.GlueArgParser
+import com.amazonaws.services.glue.util.Job
+import com.amazonaws.services.glue.util.JsonOptions
+import com.amazonaws.services.glue.{DynamicRecord, GlueContext}
+import com.amazonaws.services.glue.DynamicFrame
+import org.apache.spark.SparkContext
+import org.apache.spark
+import scala.collection.JavaConverters._
+import org.apache.spark.sql.DataFrame
+
+/////////////////////////////////////////////////////////////////////
+/////// DEEQU START /////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+
+// wget https://repo1.maven.org/maven2/com/amazon/deequ/deequ/1.0.2/deequ-1.0.2.jar
+
+
+import com.amazon.deequ.{VerificationSuite, VerificationResult}
+import com.amazon.deequ.VerificationResult.checkResultsAsDataFrame
+import com.amazon.deequ.checks.{Check, CheckLevel}
+import com.amazon.deequ.suggestions.{ConstraintSuggestionRunner, Rules}
+import com.amazon.deequ.profiles.{ColumnProfilerRunner, NumericColumnProfile}
+import com.amazon.deequ.schema
+import com.amazon.deequ.schema.{RowLevelSchema,RowLevelSchemaValidator}
+import org.apache.spark.sql.SparkSession
+
+/////////////////////////////////////////////////////////////////////
+/////// DEEQU END ///////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+
+object GlueApp {
+  def main(sysArgs: Array[String]) {
+    val spark: SparkContext = new SparkContext()
+    val glueContext: GlueContext = new GlueContext(spark)
+    
+    val source_bucket="s3://visbucket-42325/geoloans/loan_data_short.csv"
+    val output_bucket="s3://deequ-report-outputs/results/"
+    
+
+    // @params: [JOB_NAME]
+    val args = GlueArgParser.getResolvedOptions(sysArgs, Seq("JOB_NAME").toArray)
+    Job.init(args("JOB_NAME"), glueContext, args.asJava)
+    // @type: DataSource
+    // @args: [database = "deequdatabase", table_name = "loan_data_short_csv", transformation_ctx = "datasource0"]
+    // @return: datasource0
+    // @inputs: []
+    val datasource0 = glueContext.getCatalogSource(database = "deequdatabase", tableName = "loan_data_short_csv", redshiftTmpDir = "", transformationContext = "datasource0").getDynamicFrame()
+    // @type: ApplyMapping
+    // @args: [mapping = [("id", "long", "IDDDD", "long"), ("year", "long", "year", "long"), ("issue_d", "string", "issue_d", "string"), ("final_d", "long", "final_d", "long"), ("emp_length_int", "double", "emp_length_int", "double"), ("home_ownership", "string", "home_ownership", "string"), ("home_ownership_cat", "long", "home_ownership_cat", "long"), ("income_category", "string", "income_category", "string"), ("annual_inc", "long", "annual_inc", "long"), ("income_cat", "long", "income_cat", "long"), ("loan_amount", "long", "loan_amount", "long"), ("term", "string", "term", "string"), ("term_cat", "long", "term_cat", "long"), ("application_type", "string", "application_type", "string"), ("application_type_cat", "long", "application_type_cat", "long"), ("purpose", "string", "purpose", "string"), ("purpose_cat", "long", "purpose_cat", "long"), ("interest_payments", "string", "interest_payments", "string"), ("interest_payment_cat", "long", "interest_payment_cat", "long"), ("loan_condition", "string", "loan_condition", "string"), ("loan_condition_cat", "long", "loan_condition_cat", "long"), ("interest_rate", "double", "interest_rate", "double"), ("grade", "string", "grade", "string"), ("grade_cat", "long", "grade_cat", "long"), ("dti", "double", "dti", "double"), ("total_pymnt", "double", "total_pymnt", "double"), ("total_rec_prncp", "double", "total_rec_prncp", "double"), ("recoveries", "double", "recoveries", "double"), ("installment", "double", "installment", "double"), ("latitude", "double", "latitude", "double"), ("longitude", "double", "longitude", "double")], transformation_ctx = "applymapping1"]
+    // @return: applymapping1
+    // @inputs: [frame = datasource0]
+    val applymapping1 = datasource0.applyMapping(mappings = Seq(("id", "long", "IDDDD", "long"), ("year", "long", "year", "long"), ("issue_d", "string", "issue_d", "string"), ("final_d", "long", "final_d", "long"), ("emp_length_int", "double", "emp_length_int", "double"), ("home_ownership", "string", "home_ownership", "string"), ("home_ownership_cat", "long", "home_ownership_cat", "long"), ("income_category", "string", "income_category", "string"), ("annual_inc", "long", "annual_inc", "long"), ("income_cat", "long", "income_cat", "long"), ("loan_amount", "long", "loan_amount", "long"), ("term", "string", "term", "string"), ("term_cat", "long", "term_cat", "long"), ("application_type", "string", "application_type", "string"), ("application_type_cat", "long", "application_type_cat", "long"), ("purpose", "string", "purpose", "string"), ("purpose_cat", "long", "purpose_cat", "long"), ("interest_payments", "string", "interest_payments", "string"), ("interest_payment_cat", "long", "interest_payment_cat", "long"), ("loan_condition", "string", "loan_condition", "string"), ("loan_condition_cat", "long", "loan_condition_cat", "long"), ("interest_rate", "double", "interest_rate", "double"), ("grade", "string", "grade", "string"), ("grade_cat", "long", "grade_cat", "long"), ("dti", "double", "dti", "double"), ("total_pymnt", "double", "total_pymnt", "double"), ("total_rec_prncp", "double", "total_rec_prncp", "double"), ("recoveries", "double", "recoveries", "double"), ("installment", "double", "installment", "double"), ("latitude", "double", "latitude", "double"), ("longitude", "double", "longitude", "double")), caseSensitive = false, transformationContext = "applymapping1")
+   
+
+    /////////////////////////////////////////////////////////////////////
+    /////// DEEQU START /////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////
+
+    // val DynFr = glueContext.create_dynamic_frame.from_catalog(database="deequdatabase", table_name="loan_data_short_csv")
+    val dframe: DynamicFrame = glueContext.getCatalogSource(database = "deequdatabase", tableName = "loan_data_short_csv").getDynamicFrame()
+    
+    // dframe.show()
+    
+    val dataset: DataFrame = dframe.toDF()
+    
+    // dataset.show()
+   
+	
+	val verificationResult: VerificationResult = { VerificationSuite().onData(dataset).addCheck(
+		Check(CheckLevel.Error, "Review Check")
+		
+		.isUnique("id")
+
+		.isComplete("purpose_cat")
+		.isComplete("annual_inc")
+		.isComplete("total_pymnt")
+		.isComplete("grade_cat")
+
+		.isComplete("interest_rate") 
+		.isNonNegative("interest_rate")
+
+		.hasMax("loan_amount", _ == 5000)
+		
+		.isContainedIn("term", Array(" 36 months", " 60 months"))
+		.isContainedIn("loan_condition", Array("Good Loan"), _ >= 0.95, Some("It should be above 0.95!"))                                 
+
+		).run() 
+	}
+	
+	val resultDataFrame: DataFrame= checkResultsAsDataFrame(SparkSession.builder().getOrCreate(), verificationResult)
+	
+	resultDataFrame.select("constraint", "constraint_status", "constraint_message").show()
+	resultDataFrame.select("constraint_message").show(100,100)
+	
+    /////////////////////////////////////////////////////////////////////
+    /////// DEEQU END ///////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////
+    
+    // @type: DataSink
+    // @args: [connection_type = "s3", connection_options = {"path": "s3://visbucket-42325/results"}, format = "csv", transformation_ctx = "datasink2"]
+    // @return: datasink2
+    // @inputs: [frame = applymapping1]
+    val datasink2 = glueContext.getSinkWithFormat(connectionType = "s3", options = JsonOptions("""{"path": "s3://visbucket-42325/results"}"""), transformationContext = "datasink2", format = "csv").writeDynamicFrame(applymapping1)
+    Job.commit()
+  }
+}
